@@ -74,6 +74,19 @@ import math
 import numpy as np
 import sympy
 import cirq
+import cirq.ops.raw_types as raw_types
+import abc
+
+class AnyQubitGate(raw_types.Gate, metaclass=abc.ABCMeta):
+    """A gate that must be applied to exactly 'any' qubits."""
+
+    def __init__(self, num_qubits):
+        super().__init__()
+        self.num_qubits = num_qubits
+
+    def _num_qubits_(self) -> int:
+        return self.num_qubits
+
 
 
 class PhaseEstimation(cirq.Gate):
@@ -100,7 +113,9 @@ class PhaseEstimation(cirq.Gate):
         yield cirq.qft(*qubits[:-self.memory_size], without_reverse=True) ** -1
 
 
-class HamiltonianSimulation1(cirq.EigenGate, cirq.SingleQubitGate):
+
+
+class HamiltonianSimulation(cirq.EigenGate, AnyQubitGate):
     """
     A gate that represents e^iAt.
 
@@ -111,9 +126,12 @@ class HamiltonianSimulation1(cirq.EigenGate, cirq.SingleQubitGate):
     """
 
     def __init__(self, A, t, exponent=1.0):
-        cirq.SingleQubitGate.__init__(self)
+        num_qubits = int(np.log2(A.shape[0]))
+
+        AnyQubitGate.__init__(self, num_qubits)
         cirq.EigenGate.__init__(self, exponent=exponent)
         self.A = A
+
         self.t = t
         ws, vs = np.linalg.eigh(A)
         self.eigen_components = []
@@ -123,48 +141,10 @@ class HamiltonianSimulation1(cirq.EigenGate, cirq.SingleQubitGate):
             self.eigen_components.append((theta, P))
 
     def _with_exponent(self, exponent):
-        return HamiltonianSimulation1(self.A, self.t, exponent)
+        return HamiltonianSimulation(self.A, self.t, exponent)
 
     def _eigen_components(self):
         return self.eigen_components
-
-
-class HamiltonianSimulation2(cirq.EigenGate, cirq.TwoQubitGate):
-    """
-    A gate that represents e^iAt.
-
-    This EigenGate + np.linalg.eigh() implementation is used here
-    purely for demonstrative purposes. If a large matrix is used,
-    the circuit should implement actual Hamiltonian simulation,
-    by using the linear operators framework in Cirq for example.
-    """
-
-    def __init__(self, A, t, exponent=1.0):
-        cirq.TwoQubitGate.__init__(self)
-        cirq.EigenGate.__init__(self, exponent=exponent)
-        self.A = A
-        self.t = t
-        ws, vs = np.linalg.eigh(A)
-        self.eigen_components = []
-        for w, v in zip(ws, vs.T):
-            theta = w * t / math.pi
-            P = np.outer(v, np.conj(v))
-            self.eigen_components.append((theta, P))
-
-    def _with_exponent(self, exponent):
-        return HamiltonianSimulation2(self.A, self.t, exponent)
-
-    def _eigen_components(self):
-        return self.eigen_components
-
-
-def HamiltonianSimulation(A, t):
-    if A.shape[0] == 2:
-        sim = HamiltonianSimulation1(A, t)
-    elif A.shape[0] == 4:
-        sim = HamiltonianSimulation2(A, t)
-
-    return sim
 
 
 class PhaseKickback(cirq.Gate):
@@ -278,6 +258,7 @@ def hhl_circuit(A, C, t, register_size, *input_prep_gates):
     hs = HamiltonianSimulation(A, t)
     pe = PhaseEstimation(register_size + memory_size, hs, memory_size)
     c.append([gate(*memory) for gate in input_prep_gates])
+
     c.append(
         [
             pe(*(register + memory)),
@@ -298,7 +279,7 @@ def hhl_circuit(A, C, t, register_size, *input_prep_gates):
 
 def simulate(circuit, A):
     global results
-    
+
     simulator = cirq.Simulator()
 
     results = simulator.run(circuit, repetitions=200000)
@@ -321,7 +302,6 @@ def simulate(circuit, A):
         print(i, math.sqrt(x[i] / sum(x)))
 
 
-
 def main():
     """
     Simulates HHL with matrix input, and outputs Pauli observables of the
@@ -337,8 +317,22 @@ def main():
             [0, 0, -2, 1]
         ]
     )
+##    A = np.array(
+##        [
+##            [5, -2, 0, 0, 0, 0, 0, 0],
+##            [-2, 1, 0, 0, 0, 0, 0, 0],
+##            [0, 0, 5, -2, 0, 0, 0, 0],
+##            [0, 0, -2, 1, 0, 0, 0, 0],
+##            [0, 0, 0, 0, 5, -2, 0, 0],
+##            [0, 0, 0, 0, -2, 1, 0, 0],
+##            [0, 0, 0, 0, 0, 0, 5, -2],
+##            [0, 0, 0, 0, 0, 0, -2, 1]
+##        ]
+##    )
 
-    b = np.array([[1], [0], [0], [0]])
+    b = np.array([[12], [-5], [1], [0]])
+
+
     sol = np.linalg.inv(A) @ b
     sol = sol / np.linalg.norm(sol)
     print('Classical solution')
@@ -352,7 +346,7 @@ def main():
     print('Register size', register_size)
 
     t = 0.5723 #0.358166 * math.pi
-    
+
     input_prep_gates = []#[cirq.ry(2 * -0.3948)]
 
 
