@@ -223,7 +223,53 @@ class EigenRotation(cirq.Gate):
         return cirq.ry(theta)
 
 
-def hhl_circuit(A, C, t, register_size, *input_prep_gates):
+class InputPrepGates(cirq.Gate):
+
+    def __init__(self, b):
+        super(InputPrepGates, self)
+
+        self._num_qubits = int(np.log2(len(b)))
+
+        self.b = b
+
+    def num_qubits(self):
+        return self._num_qubits
+
+    def _decompose_(self, qubits):
+        b = self.b
+
+        qubits = list(qubits)
+
+        if (b[1] == 0) and (b[0] == 0):
+            print('rot 90')
+            yield cirq.ry(3.1415 / 2)(qubits[0])
+
+        else:
+            t3 = np.arctan(np.sqrt(b[3]**2 + b[2]**2) / np.sqrt(b[1]**2 + b[0]**2))
+            print('t3', t3)
+            yield cirq.ry(2 * t3)(qubits[0])
+
+        print('x')
+        yield cirq.X(qubits[0])
+
+        t1 = np.arctan(b[1] / b[0])
+        print('t1', t1)
+        yield cirq.ControlledGate(cirq.ry(2 * t1))(qubits[0], qubits[1])
+
+        print('x')
+        yield cirq.X(qubits[0])
+
+        if (b[2] == 0):
+            print('rot 180')
+            yield cirq.ControlledGate(cirq.ry(3.1415))(qubits[0], qubits[1])
+        else:
+            t2 = np.arctan(b[3] / b[2])
+            print('t2', t2)
+            yield cirq.ControlledGate(cirq.ry(2 * t2))(qubits[0], qubits[1])
+
+
+
+def hhl_circuit(A, C, t, register_size, b):
     """
     Constructs the HHL circuit.
 
@@ -257,7 +303,10 @@ def hhl_circuit(A, C, t, register_size, *input_prep_gates):
     c = cirq.Circuit()
     hs = HamiltonianSimulation(A, t)
     pe = PhaseEstimation(register_size + memory_size, hs, memory_size)
-    c.append([gate(*memory) for gate in input_prep_gates])
+
+    c.append([
+        InputPrepGates(b)(*memory)
+    ])
 
     c.append(
         [
@@ -347,8 +396,6 @@ def main():
 
     t = 0.5723 #0.358166 * math.pi
 
-    input_prep_gates = []#[cirq.ry(2 * -0.3948)]
-
 
     # Set C to be the smallest eigenvalue that can be represented by the
     # circuit.
@@ -356,7 +403,7 @@ def main():
 
     # Simulate circuit
     print("Results: ")
-    simulate(hhl_circuit(A, C, t, register_size, *input_prep_gates), A)
+    simulate(hhl_circuit(A, C, t, register_size, b), A)
 
 
 if __name__ == '__main__':
