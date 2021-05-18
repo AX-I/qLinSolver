@@ -237,36 +237,76 @@ class InputPrepGates(cirq.Gate):
 
     def _decompose_(self, qubits):
         b = self.b
-
         qubits = list(qubits)
 
-        if (b[1] == 0) and (b[0] == 0):
-            print('rot 90')
-            yield cirq.ry(3.1415 / 2)(qubits[0])
+
+        t7_den = sum(x**2 for x in b[0:4])
+        t7_num = sum(x**2 for x in b[4:8])
+
+        if t7_den == 0:
+            if t7_num == 0:
+                return cirq.ry(0)(qubits[0])
+
+            sign_num = 1 if t7_num > 0 else -1
+            yield cirq.ry(sign_num * 3.1415)(qubits[0])
 
         else:
-            t3 = np.arctan(np.sqrt(b[3]**2 + b[2]**2) / np.sqrt(b[1]**2 + b[0]**2))
-            print('t3', t3)
-            yield cirq.ry(2 * t3)(qubits[0])
+            t7 = np.arctan(np.sqrt(t7_num / t7_den))
+            yield cirq.ry(2 * t7)(qubits[0])
 
-        print('x')
+
         yield cirq.X(qubits[0])
 
-        t1 = np.arctan(b[1] / b[0])
-        print('t1', t1)
-        yield cirq.ControlledGate(cirq.ry(2 * t1))(qubits[0], qubits[1])
+        yield rotTheta(b[0:2], b[2:4], qubits[0], qubits[1])
 
-        print('x')
         yield cirq.X(qubits[0])
 
-        if (b[2] == 0):
-            print('rot 180')
-            yield cirq.ControlledGate(cirq.ry(3.1415))(qubits[0], qubits[1])
+
+
+        yield cirq.X(qubits[1])
+
+        yield rotTheta(b[0], b[1], qubits[1], qubits[2])
+
+        yield cirq.X(qubits[1])
+
+        yield rotTheta(b[2], b[3], qubits[1], qubits[2])
+
+
+
+        yield rotTheta(b[4:6], b[6:8], qubits[0], qubits[1])
+
+
+        yield cirq.X(qubits[1])
+
+        yield rotTheta(b[4], b[5], qubits[1], qubits[2])
+
+        yield cirq.X(qubits[1])
+
+        yield rotTheta(b[6], b[7], qubits[1], qubits[2])
+
+
+
+def rotTheta(b_den, b_num, qubitA, qubitB):
+    if type(b_den) == np.ndarray and len(b_den) > 1:
+        den = sum(x**2 for x in b_den)
+        num = sum(x**2 for x in b_num)
+    else:
+        den = b_den
+        num = b_num
+
+    if den == 0:
+        if num == 0:
+            return cirq.ry(0)(qubitB)
+        sign_num = 1 if num > 0 else -1
+        return cirq.ControlledGate(cirq.ry(sign_num * 3.1415))(qubitA, qubitB)
+
+    else:
+        if type(b_den) == np.ndarray and len(b_den) > 1:
+            theta = np.arctan(np.sqrt(num / den))
         else:
-            t2 = np.arctan(b[3] / b[2])
-            print('t2', t2)
-            yield cirq.ControlledGate(cirq.ry(2 * t2))(qubits[0], qubits[1])
+            theta = np.arctan(num / den)
 
+        return cirq.ControlledGate(cirq.ry(2 * theta))(qubitA, qubitB)
 
 
 def hhl_circuit(A, C, t, register_size, b):
@@ -331,7 +371,7 @@ def simulate(circuit, A):
 
     simulator = cirq.Simulator()
 
-    results = simulator.run(circuit, repetitions=200000)
+    results = simulator.run(circuit, repetitions=5 * 10**5)
 
     h = results.histogram(key='m')
 
@@ -358,28 +398,30 @@ def main():
     Expected observables are calculated from the expected solution |x>.
     """
 
-    A = np.array(
-        [
-            [5, -2, 0, 0],
-            [-2, 1, 0, 0],
-            [0, 0, 5, -2],
-            [0, 0, -2, 1]
-        ]
-    )
+
 ##    A = np.array(
 ##        [
-##            [5, -2, 0, 0, 0, 0, 0, 0],
-##            [-2, 1, 0, 0, 0, 0, 0, 0],
-##            [0, 0, 5, -2, 0, 0, 0, 0],
-##            [0, 0, -2, 1, 0, 0, 0, 0],
-##            [0, 0, 0, 0, 5, -2, 0, 0],
-##            [0, 0, 0, 0, -2, 1, 0, 0],
-##            [0, 0, 0, 0, 0, 0, 5, -2],
-##            [0, 0, 0, 0, 0, 0, -2, 1]
+##            [5, -2, 0, 0],
+##            [-2, 1, 0, 0],
+##            [0, 0, 5, -2],
+##            [0, 0, -2, 1]
 ##        ]
 ##    )
+    A = np.array(
+        [
+            [5, -2, 0, 0, 0, 0, 0, 0],
+            [-2, 1, 0, 0, 0, 0, 0, 0],
+            [0, 0, 5, -2, 0, 0, 0, 0],
+            [0, 0, -2, 1, 0, 0, 0, 0],
+            [0, 0, 0, 0, 5, -2, 0, 0],
+            [0, 0, 0, 0, -2, 1, 0, 0],
+            [0, 0, 0, 0, 0, 0, 5, -2],
+            [0, 0, 0, 0, 0, 0, -2, 1]
+        ]
+    )
 
-    b = np.array([[12], [-5], [1], [0]])
+    b = np.array([[12], [-5], [1], [0], [0], [0], [0], [0]])
+    #b = np.array([[1], [0], [0], [0], [0], [0], [0], [0]])
 
 
     sol = np.linalg.inv(A) @ b
