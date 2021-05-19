@@ -121,12 +121,13 @@ class EigenRotation(cirq.Gate):
     value, up to a normalization factor C.
     """
 
-    def __init__(self, num_qubits, C, t):
+    def __init__(self, num_qubits, C, t, k_border):
         super(EigenRotation, self)
         self._num_qubits = num_qubits
         self.C = C
         self.t = t
         self.N = 2 ** (num_qubits - 1)
+        self.k_border = k_border
 
     def num_qubits(self):
         return self._num_qubits
@@ -152,7 +153,11 @@ class EigenRotation(cirq.Gate):
     def _ancilla_rotation(self, k):
         if k == 0:
             k = self.N
-        theta = 2 * math.asin(self.C * self.N * self.t / (2 * math.pi * k))
+
+        if (k > self.k_border) and (k != self.N):
+            theta = 2 * math.asin(self.C * self.N * self.t / (2 * math.pi * (k - self.N)))
+        else:
+            theta = 2 * math.asin(self.C * self.N * self.t / (2 * math.pi * k))
         return cirq.ry(theta)
 
 
@@ -232,7 +237,7 @@ def rotTheta(b_den, b_num, qubitA, qubitB, control=True):
             return cirq.ry(2 * theta)(qubitB)
 
 
-def hhl_circuit(A, C, t, register_size, b):
+def hhl_circuit(A, C, t, register_size, b, k_border):
     """
     Constructs the HHL circuit.
 
@@ -274,7 +279,7 @@ def hhl_circuit(A, C, t, register_size, b):
     c.append(
         [
             pe(*(register + memory)),
-            EigenRotation(register_size + 1, C, t)(*(register + [ancilla])),
+            EigenRotation(register_size + 1, C, t, k_border)(*(register + [ancilla])),
             pe(*(register + memory)) ** -1,
             cirq.measure(ancilla, key='a'),
         ]
@@ -321,7 +326,12 @@ def main():
     Expected observables are calculated from the expected solution |x>.
     """
 
-
+    A = np.array(
+        [
+            [5, 0],
+            [0, -1]
+        ]
+    )
 ##    A = np.array(
 ##        [
 ##            [5, -2, 0, 0],
@@ -330,45 +340,47 @@ def main():
 ##            [0, 0, -2, 1]
 ##        ]
 ##    )
-    A = np.array(
-        [
-            [5, -2, 0, 0, 0, 0, 0, 0],
-            [-2, 1, 0, 0, 0, 0, 0, 0],
-            [0, 0, 5, -2, 0, 0, 0, 0],
-            [0, 0, -2, 1, 0, 0, 0, 0],
-            [0, 0, 0, 0, 5, -2, 0, 0],
-            [0, 0, 0, 0, -2, 1, 0, 0],
-            [0, 0, 0, 0, 0, 0, 5, -2],
-            [0, 0, 0, 0, 0, 0, -2, 1]
-        ]
-    )
+##    A = np.array(
+##        [
+##            [5, -2, 0, 0, 0, 0, 0, 0],
+##            [-2, 1, 0, 0, 0, 0, 0, 0],
+##            [0, 0, 5, -2, 0, 0, 0, 0],
+##            [0, 0, -2, 1, 0, 0, 0, 0],
+##            [0, 0, 0, 0, 5, -2, 0, 0],
+##            [0, 0, 0, 0, -2, 1, 0, 0],
+##            [0, 0, 0, 0, 0, 0, 5, -2],
+##            [0, 0, 0, 0, 0, 0, -2, 1]
+##        ]
+##    )
 
-    b = np.array([[12], [-5], [1], [0], [0], [0], [0], [0]])
+    b = np.array([[12], [-5]])
+    #b = np.array([[12], [-5], [1], [0], [0], [0], [0], [0]])
     #b = np.array([[1], [0], [0], [0], [0], [0], [0], [0]])
 
+    L, v = np.linalg.eigh(A)
+
+    register_size = 3
+    t = 0.78533
+
+    print('t', t)
+    print('Register size', register_size)
+
+    # k_border is the overflow limit between positive and negative eigenvalues
+    k_border = 1 + math.floor((2**register_size * max(L) * t / (2*3.1415)))
+    print('border', k_border)
+
+    # Set C to be the smallest eigenvalue that can be represented by the
+    # circuit.
+    C = 2 * math.pi / (2 ** register_size * t)
 
     sol = np.linalg.inv(A) @ b
     sol = sol / np.linalg.norm(sol)
     print('Classical solution')
     print(sol)
 
-    L, v = np.linalg.eigh(A)
-
-    ratio = max(L) / min(L)
-
-    register_size = math.ceil(math.log2(ratio))
-    print('Register size', register_size)
-
-    t = 0.5723 #0.358166 * math.pi
-
-
-    # Set C to be the smallest eigenvalue that can be represented by the
-    # circuit.
-    C = 2 * math.pi / (2 ** register_size * t)
-
     # Simulate circuit
     print("Results: ")
-    simulate(hhl_circuit(A, C, t, register_size, b), A)
+    simulate(hhl_circuit(A, C, t, register_size, b, k_border), A)
 
 
 if __name__ == '__main__':
