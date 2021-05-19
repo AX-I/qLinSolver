@@ -237,7 +237,29 @@ def rotTheta(b_den, b_num, qubitA, qubitB, control=True):
             return cirq.ry(2 * theta)(qubitB)
 
 
-def hhl_circuit(A, C, t, register_size, b, k_border):
+class InnerProduct(cirq.Gate):
+    def __init__(self, mem_size):
+        super(InnerProduct, self)
+        self.mem_size = mem_size
+        self._num_qubits = 1 + 2 * mem_size
+
+    def num_qubits(self):
+        return self._num_qubits
+
+    def _decompose_(self, qubits):
+        anc = qubits[0]
+        mem1 = qubits[1 : 1 + self.mem_size]
+        mem2 = qubits[1 + self.mem_size:]
+
+        yield cirq.H(anc)
+
+        for i in range(self.mem_size):
+            yield cirq.ControlledGate(cirq.SWAP)(anc, mem1[i], mem2[i])
+
+        yield cirq.H(anc)
+
+
+def hhl_circuit(A, C, t, register_size, b, k_border, select):
     """
     Constructs the HHL circuit.
 
@@ -267,6 +289,9 @@ def hhl_circuit(A, C, t, register_size, b, k_border):
 
     memory = [cirq.LineQubit(register_size + 1 + i) for i in range(memory_size)]
 
+    if select is not None:
+        mem_select = [cirq.LineQubit(memory_size + register_size + 1 + i) for i in range(memory_size)]
+        ancilla_select = cirq.LineQubit(2*memory_size + register_size + 1)
 
     c = cirq.Circuit()
     hs = HamiltonianSimulation(A, t)
@@ -275,6 +300,11 @@ def hhl_circuit(A, C, t, register_size, b, k_border):
     c.append([
         InputPrepGates(b)(*memory)
     ])
+
+    if select is not None:
+        c.append([
+            InputPrepGates(select)(*mem_select)
+        ])
 
     c.append(
         [
@@ -285,38 +315,50 @@ def hhl_circuit(A, C, t, register_size, b, k_border):
         ]
     )
 
-    c.append(
-        [
+    if select is not None:
+        c.append([
+            InnerProduct(len(memory))(ancilla_select, *memory, *mem_select),
+            cirq.measure(ancilla, ancilla_select, key='s')
+        ])
+
+    else:
+        c.append([
             cirq.measure(ancilla, *memory, key='m'),
-        ]
-    )
+        ])
 
     return c
 
 
 def simulate(circuit, A):
     global results
+    import math
 
     simulator = cirq.Simulator()
 
     results = simulator.run(circuit, repetitions=5 * 10**5)
 
-    h = results.histogram(key='m')
+    try:
+        h = results.histogram(key='m')
+        memory_size = int(np.log2(A.shape[0]))
+        sol = dict(h.items())
+        x = []
+        for i in range(2**memory_size, 2**(memory_size+1)):
+            try:
+                x.append(sol[i])
+            except:
+                x.append(0)
+        for i in range(len(x)):
+            print(i, math.sqrt(x[i] / sum(x)))
+    except KeyError:
+        print('Not measuring solution')
 
-    import math
-
-    memory_size = int(np.log2(A.shape[0]))
-
-    sol = dict(h.items())
-    x = []
-    for i in range(2**memory_size, 2**(memory_size+1)):
-        try:
-            x.append(sol[i])
-        except:
-            x.append(0)
-
-    for i in range(len(x)):
-        print(i, math.sqrt(x[i] / sum(x)))
+    try:
+        s = results.histogram(key='s')
+        prob = s[2] / (s[2] + s[3])
+        inn = math.sqrt(2 * prob - 1)
+        print('Inner product', inn)
+    except KeyError:
+        print('Not measuring select')
 
 
 def main():
@@ -325,6 +367,7 @@ def main():
     resulting qubit state |x>.
     Expected observables are calculated from the expected solution |x>.
     """
+    select = None
 
     A = np.array(
         [
@@ -357,6 +400,11 @@ def main():
     #b = np.array([[12], [-5], [1], [0], [0], [0], [0], [0]])
     #b = np.array([[1], [0], [0], [0], [0], [0], [0], [0]])
 
+    select = np.array([[1], [0]])
+
+    # ==== ==== ==== ==== End of User Input ==== ==== ==== ====
+
+
     L, v = np.linalg.eigh(A)
 
     from find_t_and_registerSize import find_t_and_registerSize
@@ -364,6 +412,9 @@ def main():
 
     print('t', t)
     print('Register size', register_size)
+
+    if select is not None:
+        select = select / np.linalg.norm(select)
 
     # k_border is the overflow limit between positive and negative eigenvalues
     k_border = 1 + math.floor((2**register_size * max(L) * t / (2*3.1415)))
@@ -380,7 +431,7 @@ def main():
 
     # Simulate circuit
     print("Results: ")
-    simulate(hhl_circuit(A, C, t, register_size, b, k_border), A)
+    simulate(hhl_circuit(A, C, t, register_size, b, k_border, select), A)
 
 
 if __name__ == '__main__':
