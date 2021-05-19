@@ -359,8 +359,8 @@ def main():
 
     L, v = np.linalg.eigh(A)
 
-    register_size = 3
-    t = 0.78533
+    from find_t_and_registerSize import find_t_and_registerSize
+    t, register_size = find_t_and_registerSize(A)
 
     print('t', t)
     print('Register size', register_size)
