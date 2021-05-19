@@ -311,7 +311,6 @@ def hhl_circuit(A, C, t, register_size, b, k_border, select):
             pe(*(register + memory)),
             EigenRotation(register_size + 1, C, t, k_border)(*(register + [ancilla])),
             pe(*(register + memory)) ** -1,
-            cirq.measure(ancilla, key='a'),
         ]
     )
 
@@ -428,6 +427,9 @@ def main():
     sol = sol / np.linalg.norm(sol)
     print('Classical solution')
     print(sol)
+    if select is not None:
+        print('Inner product')
+        print(round((select.T @ sol)[0][0], 8))
 
     # Simulate circuit
     print("Results: ")
