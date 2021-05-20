@@ -162,42 +162,39 @@ class EigenRotation(cirq.Gate):
 
 
 class InputPrepGates(cirq.Gate):
-
     def __init__(self, b):
         super(InputPrepGates, self)
-
         self._num_qubits = int(np.log2(len(b)))
-
         self.b = b
 
     def num_qubits(self):
         return self._num_qubits
 
     def _recurse(self, b, qubits, depth=0):
+        d = depth
         k = len(b) // 2
 
         if depth == 0:
-            yield rotTheta(b[:k], b[k:], None, qubits[0], control=False)
+            yield rotTheta(b[:k], b[k:], [], qubits[0], control=False)
 
         if k == 1:
             return None
 
-        yield cirq.X(qubits[0])
+        yield cirq.X(qubits[d])
 
-        yield rotTheta(b[:k//2], b[k//2:k], qubits[0], qubits[1])
-
-        yield cirq.X(qubits[0])
+        yield rotTheta(b[:k//2], b[k//2:k], qubits[:d+1], qubits[d+1])
 
         if k > 2:
             # Recurse
-            yield self._recurse(b[:k], qubits[1:], depth + 1)
+            yield self._recurse(b[:k], qubits, depth + 1)
 
+        yield cirq.X(qubits[d])
 
-        yield rotTheta(b[k:k+k//2], b[k+k//2:], qubits[0], qubits[1])
+        yield rotTheta(b[k:k+k//2], b[k+k//2:], qubits[:d+1], qubits[d+1])
 
         if k > 2:
             # Recurse
-            yield self._recurse(b[k:], qubits[1:], depth + 1)
+            yield self._recurse(b[k:], qubits, depth + 1)
 
     def _decompose_(self, qubits):
         b = self.b
@@ -206,7 +203,8 @@ class InputPrepGates(cirq.Gate):
         return self._recurse(b, qubits)
 
 
-def rotTheta(b_den, b_num, qubitA, qubitB, control=True):
+def rotTheta(b_den, b_num, qubitsA, qubitB, control=True):
+    NC = len(qubitsA)
 
     if type(b_den) == np.ndarray and len(b_den) > 1:
         den = sum(x**2 for x in b_den)
@@ -221,7 +219,8 @@ def rotTheta(b_den, b_num, qubitA, qubitB, control=True):
         sign_num = 1 if num > 0 else -1
 
         if control:
-            return cirq.ControlledGate(cirq.ry(sign_num * 3.1415))(qubitA, qubitB)
+            crot = cirq.ControlledGate(cirq.ry(sign_num * 3.1415), num_controls=NC)
+            return crot(*qubitsA, qubitB)
         else:
             return cirq.ry(sign_num * 3.1415)(qubitB)
 
@@ -232,7 +231,8 @@ def rotTheta(b_den, b_num, qubitA, qubitB, control=True):
             theta = np.arctan(num / den)
 
         if control:
-            return cirq.ControlledGate(cirq.ry(2 * theta))(qubitA, qubitB)
+            crot = cirq.ControlledGate(cirq.ry(2 * theta), num_controls=NC)
+            return crot(*qubitsA, qubitB)
         else:
             return cirq.ry(2 * theta)(qubitB)
 
