@@ -259,7 +259,8 @@ class InnerProduct(cirq.Gate):
         yield cirq.H(anc)
 
 
-def hhl_circuit(A, C, t, register_size, b, k_border, select):
+def hhl_circuit(A, C, t, register_size, b, k_border,
+                select, getMagnitude):
     """
     Constructs the HHL circuit.
 
@@ -320,15 +321,29 @@ def hhl_circuit(A, C, t, register_size, b, k_border, select):
             cirq.measure(ancilla, ancilla_select, key='s')
         ])
 
-    else:
+    elif not getMagnitude:
         c.append([
             cirq.measure(ancilla, *memory, key='m'),
+        ])
+
+
+    if getMagnitude:
+        max_b = [abs(e) for e in b].index(max([abs(e) for e in b]))
+        row = A[max_b]
+        row_mag = np.linalg.norm(row)
+        row_q = [cirq.LineQubit(2*memory_size + register_size + 2 + i) for i in range(memory_size)]
+        row_anc = cirq.LineQubit(3*memory_size + register_size + 2)
+
+        c.append([
+            InputPrepGates(row)(*row_q),
+            InnerProduct(len(memory))(row_anc, *row_q, *memory),
+            cirq.measure(ancilla, row_anc, key='x')
         ])
 
     return c
 
 
-def simulate(circuit, A):
+def simulate(circuit, A, b):
     global results
     import math
 
@@ -359,6 +374,19 @@ def simulate(circuit, A):
     except KeyError:
         print('Not measuring select')
 
+    try:
+        x = results.histogram(key='x')
+        prob = x[2] / (x[2] + x[3])
+        inn = math.sqrt(max(0, 2 * prob - 1))
+        max_b = [abs(e) for e in b].index(max([abs(e) for e in b]))
+        row = A[max_b]
+        row_mag = np.linalg.norm(row)
+        sign = -1 if b[max_b] < 0 else 1
+        print('Magnitude', sign * b[max_b] / (inn * row_mag))
+
+    except KeyError:
+        print('Not measuring magnitude')
+
 
 def main():
     """
@@ -367,6 +395,7 @@ def main():
     Expected observables are calculated from the expected solution |x>.
     """
     select = None
+    getMagnitude = False
 
     A = np.array(
         [
@@ -399,7 +428,8 @@ def main():
     #b = np.array([[12], [-5], [1], [0], [0], [0], [0], [0]])
     #b = np.array([[1], [0], [0], [0], [0], [0], [0], [0]])
 
-    select = np.array([[1], [0]])
+    #select = np.array([[1], [0]])
+    getMagnitude = True
 
     # ==== ==== ==== ==== End of User Input ==== ==== ==== ====
 
@@ -424,6 +454,9 @@ def main():
     C = 2 * math.pi / (2 ** register_size * t)
 
     sol = np.linalg.inv(A) @ b
+    if getMagnitude:
+        print('Classical magnitude')
+        print(np.linalg.norm(sol))
     sol = sol / np.linalg.norm(sol)
     print('Classical solution')
     print(sol)
@@ -433,7 +466,8 @@ def main():
 
     # Simulate circuit
     print("Results: ")
-    simulate(hhl_circuit(A, C, t, register_size, b, k_border, select), A)
+    simulate(hhl_circuit(A, C, t, register_size, b,
+                         k_border, select, getMagnitude), A, b)
 
 
 if __name__ == '__main__':
