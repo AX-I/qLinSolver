@@ -343,7 +343,7 @@ def hhl_circuit(A, C, t, register_size, b, k_border,
     return c
 
 
-def simulate(circuit, A, b):
+def simulate(circuit, A, b, factors):
     global results
     import math
 
@@ -361,8 +361,13 @@ def simulate(circuit, A, b):
                 x.append(sol[i])
             except:
                 x.append(0)
+
+        x = np.array(x)
+        x = np.sqrt(x) / np.sum(x) / np.array(factors)
+        x = x / np.linalg.norm(x)
         for i in range(len(x)):
-            print(i, math.sqrt(x[i] / sum(x)))
+            print(i, x[i])
+
     except KeyError:
         print('Not measuring solution')
 
@@ -371,6 +376,7 @@ def simulate(circuit, A, b):
         prob = s[2] / (s[2] + s[3])
         inn = math.sqrt(2 * prob - 1)
         print('Inner product', inn)
+
     except KeyError:
         print('Not measuring select')
 
@@ -388,6 +394,20 @@ def simulate(circuit, A, b):
         print('Not measuring magnitude')
 
 
+def precondition(A, b):
+    factors = []
+
+    for i in range(A.shape[0]):
+        factor = math.sqrt(A[i,i])
+        A[i] = A[i] / factor
+        A[:,i] = A[:,i] / factor
+        b[i] = b[i] / factor
+
+        factors.append(factor)
+
+    return factors
+
+
 def main():
     """
     Simulates HHL with matrix input, and outputs Pauli observables of the
@@ -397,20 +417,20 @@ def main():
     select = None
     getMagnitude = False
 
-    A = np.array(
-        [
-            [5, 0],
-            [0, -1]
-        ]
-    )
 ##    A = np.array(
 ##        [
-##            [5, -2, 0, 0],
-##            [-2, 1, 0, 0],
-##            [0, 0, 5, -2],
-##            [0, 0, -2, 1]
+##            [5, 0],
+##            [0, -1]
 ##        ]
 ##    )
+    A = np.array(
+        [
+            [5, -2, 0, 0],
+            [-2, 1, 0, 0],
+            [0, 0, 5, -2],
+            [0, 0, -2, 1]
+        ]
+    )
 ##    A = np.array(
 ##        [
 ##            [5, -2, 0, 0, 0, 0, 0, 0],
@@ -424,14 +444,19 @@ def main():
 ##        ]
 ##    )
 
-    b = np.array([[12], [-5]])
+    b = np.array([[12], [-5], [1], [0]])
     #b = np.array([[12], [-5], [1], [0], [0], [0], [0], [0]])
     #b = np.array([[1], [0], [0], [0], [0], [0], [0], [0]])
 
     #select = np.array([[1], [0]])
-    getMagnitude = True
+    #getMagnitude = True
 
     # ==== ==== ==== ==== End of User Input ==== ==== ==== ====
+
+    A = A.astype('float')
+    b = b.astype('float')
+    #factors = [1] * len(A)
+    factors = precondition(A, b)
 
 
     L, v = np.linalg.eigh(A)
@@ -454,10 +479,15 @@ def main():
     C = 2 * math.pi / (2 ** register_size * t)
 
     sol = np.linalg.inv(A) @ b
+
+    for i in range(len(sol)):
+        sol[i] /= factors[i]
+
     if getMagnitude:
         print('Classical magnitude')
         print(np.linalg.norm(sol))
     sol = sol / np.linalg.norm(sol)
+
     print('Classical solution')
     print(sol)
     if select is not None:
@@ -467,7 +497,8 @@ def main():
     # Simulate circuit
     print("Results: ")
     simulate(hhl_circuit(A, C, t, register_size, b,
-                         k_border, select, getMagnitude), A, b)
+                         k_border, select, getMagnitude),
+             A, b, factors)
 
 
 if __name__ == '__main__':
