@@ -398,7 +398,7 @@ def precondition(A, b):
     factors = []
 
     for i in range(A.shape[0]):
-        factor = math.sqrt(A[i,i])
+        factor = math.sqrt(A[i,i].real)
         A[i] = A[i] / factor
         A[:,i] = A[:,i] / factor
         b[i] = b[i] / factor
@@ -406,6 +406,31 @@ def precondition(A, b):
         factors.append(factor)
 
     return factors
+
+
+def readInput(afile, bfile):
+    N = 2 ** math.ceil(math.log2(max([int(line.split(' ')[0]) for line in afile])))
+    afile.seek(0)
+
+    A_out = np.zeros((N, N), 'complex')
+
+    for line in afile:
+        s = line.split(' ')
+        h = int(s[0])
+        w = int(s[1])
+        val = complex(float(s[2]), float(s[3]))
+        A_out[h, w] = val
+        A_out[w, h] = val
+
+    b_out = np.zeros((N, 1), 'complex')
+
+    for line in bfile:
+        s = line.split(' ')
+        h = int(s[0])
+        val = complex(float(s[1]), float(s[2]))
+        b_out[h] = val
+
+    return (A_out, b_out)
 
 
 def main():
@@ -417,20 +442,22 @@ def main():
     select = None
     getMagnitude = False
 
+    A, b = readInput(open('A_in.txt'), open('B_in.txt'))
+
 ##    A = np.array(
 ##        [
 ##            [5, 0],
 ##            [0, -1]
 ##        ]
 ##    )
-    A = np.array(
-        [
-            [5, -2, 0, 0],
-            [-2, 1, 0, 0],
-            [0, 0, 5, -2],
-            [0, 0, -2, 1]
-        ]
-    )
+##    A = np.array(
+##        [
+##            [5, -2, 0, 0],
+##            [-2, 1, 0, 0],
+##            [0, 0, 5, -2],
+##            [0, 0, -2, 1]
+##        ]
+##    )
 ##    A = np.array(
 ##        [
 ##            [5, -2, 0, 0, 0, 0, 0, 0],
@@ -444,7 +471,7 @@ def main():
 ##        ]
 ##    )
 
-    b = np.array([[12], [-5], [1], [0]])
+    #b = np.array([[12], [-5], [1], [0]])
     #b = np.array([[12], [-5], [1], [0], [0], [0], [0], [0]])
     #b = np.array([[1], [0], [0], [0], [0], [0], [0], [0]])
 
@@ -453,13 +480,14 @@ def main():
 
     # ==== ==== ==== ==== End of User Input ==== ==== ==== ====
 
-    A = A.astype('float')
-    b = b.astype('float')
+    #A = A.astype('float')
+    #b = b.astype('float')
     #factors = [1] * len(A)
     factors = precondition(A, b)
 
 
     L, v = np.linalg.eigh(A)
+    print('Condition number', max(L) / min(L))
 
     from find_t_and_registerSize import find_t_and_registerSize
     t, register_size = find_t_and_registerSize(A)
@@ -482,6 +510,7 @@ def main():
 
     for i in range(len(sol)):
         sol[i] /= factors[i]
+        sol[i] = math.sqrt((sol[i] * sol[i].conjugate()).real)
 
     if getMagnitude:
         print('Classical magnitude')
