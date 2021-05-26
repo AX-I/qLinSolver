@@ -406,13 +406,13 @@ def hhl_circuit(A, C, t, register_size, b, k_border,
     return c
 
 
-def simulate(circuit, A, b, factors):
+def simulate(circuit, A, b, factors, reps):
     global results
     import math
 
     simulator = cirq.Simulator()
 
-    results = simulator.run(circuit, repetitions=5 * 10**5)
+    results = simulator.run(circuit, repetitions=reps)
 
     try:
         h = results.histogram(key='m')
@@ -430,6 +430,8 @@ def simulate(circuit, A, b, factors):
         x = x / np.linalg.norm(x)
         for i in range(len(x)):
             print(i, x[i])
+
+        return x
 
     except KeyError:
         print('Not measuring solution')
@@ -587,10 +589,16 @@ def main():
         print(round((select.T @ sol)[0][0], 8))
 
     # Simulate circuit
+    r = 5 * 10**5
+    print('Repetitions:', r)
     print("Results: ")
-    simulate(hhl_circuit(A, C, t, register_size, b,
+    actual = simulate(hhl_circuit(A, C, t, register_size, b,
                          k_border, select, getMagnitude),
-             A, b, factors)
+                      A, b, factors, reps=r)
+
+    sol = sol.flatten()
+    actual = actual.flatten()
+    print('Relative error:', math.sqrt((sum((sol - actual) ** 2)).real))
 
 
 if __name__ == '__main__':
