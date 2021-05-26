@@ -170,7 +170,7 @@ class InputPrepGates(cirq.Gate):
     def num_qubits(self):
         return self._num_qubits
 
-    def _recurse(self, b, qubits, depth=0):
+    def _recurseMag(self, b, qubits, depth=0):
         d = depth
         k = len(b) // 2
 
@@ -186,21 +186,52 @@ class InputPrepGates(cirq.Gate):
 
         if k > 2:
             # Recurse
-            yield self._recurse(b[:k], qubits, depth + 1)
+            yield self._recurseMag(b[:k], qubits, depth + 1)
 
         yield cirq.X(qubits[d])
+
 
         yield rotTheta(b[k:k+k//2], b[k+k//2:], qubits[:d+1], qubits[d+1])
 
         if k > 2:
             # Recurse
-            yield self._recurse(b[k:], qubits, depth + 1)
+            yield self._recurseMag(b[k:], qubits, depth + 1)
+
+
+    def _recursePhase(self, b, qubits, depth=0):
+        d = depth
+        k = len(b) // 2
+
+        if depth == 0:
+            yield rotPhase(b[:k], b[k:], [], qubits[0], control=False)
+
+        if k == 1:
+            return None
+
+        yield cirq.X(qubits[d])
+
+        yield rotPhase(b[:k//2], b[k//2:k], qubits[:d+1], qubits[d+1])
+
+        if k > 2:
+            # Recurse
+            yield self._recursePhase(b[:k], qubits, depth + 1)
+
+        yield cirq.X(qubits[d])
+
+
+        yield rotPhase(b[k:k+k//2], b[k+k//2:], qubits[:d+1], qubits[d+1])
+
+        if k > 2:
+            # Recurse
+            yield self._recursePhase(b[k:], qubits, depth + 1)
 
     def _decompose_(self, qubits):
         b = self.b
         qubits = list(qubits)
 
-        return self._recurse(b, qubits)
+        yield self._recurseMag(b, qubits)
+
+        yield self._recursePhase(b, qubits)
 
 
 def rotTheta(b_den, b_num, qubitsA, qubitB, control=True):
@@ -235,6 +266,38 @@ def rotTheta(b_den, b_num, qubitsA, qubitB, control=True):
             return crot(*qubitsA, qubitB)
         else:
             return cirq.ry(2 * theta)(qubitB)
+
+
+def phase(z):
+    return math.atan2(z.imag, z.real)
+
+def rotPhase(b_den, b_num, qubitsA, qubitB, control=True):
+    NC = len(qubitsA)
+
+    if type(b_den) == np.ndarray and len(b_den) > 1:
+        den = sum(phase(z) for z in b_den)
+        num = sum(phase(z) for z in b_num)
+    else:
+        den = phase(b_den)
+        num = phase(b_num)
+
+    if den == 0:
+        if num == 0:
+            return cirq.rz(0)(qubitB)
+        sign_num = 1 if num > 0 else -1
+
+        if control:
+            crot = cirq.ControlledGate(cirq.rz(sign_num * 3.1416), num_controls=NC)
+            return crot(*qubitsA, qubitB)
+        else:
+            return cirq.rz(sign_num * 3.1416)(qubitB)
+    else:
+        theta = (num - den) / 2
+        if control:
+            crot = cirq.ControlledGate(cirq.rz(2 * theta), num_controls=NC)
+            return crot(*qubitsA, qubitB)
+        else:
+            return cirq.rz(2 * theta)(qubitB)
 
 
 class InnerProduct(cirq.Gate):
@@ -420,7 +483,7 @@ def readInput(afile, bfile):
         w = int(s[1])
         val = complex(float(s[2]), float(s[3]))
         A_out[h, w] = val
-        A_out[w, h] = val
+        A_out[w, h] = val.conjugate()
 
     b_out = np.zeros((N, 1), 'complex')
 
