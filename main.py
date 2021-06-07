@@ -9,6 +9,7 @@ import sympy
 import cirq
 import cirq.ops.raw_types as raw_types
 import abc
+from W_swap import WGate, WSwap, MGate, WSwapExponent
 
 class AnyQubitGate(raw_types.Gate, metaclass=abc.ABCMeta):
     """A gate that must be applied to exactly 'any' qubits."""
@@ -31,53 +32,68 @@ class PhaseEstimation(cirq.Gate):
     estimated phase, in big-endian.
     """
 
-    def __init__(self, num_qubits, unitary, memory_size):
-        self._num_qubits = num_qubits
+    def __init__(self, reg_size, mem_size, unitary):
+        self._num_qubits = reg_size + mem_size * 2 + 1
         self.U = unitary
-        self.memory_size = memory_size
+        self.mem_size = mem_size
+        self.reg_size = reg_size
 
     def num_qubits(self):
         return self._num_qubits
 
     def _decompose_(self, qubits):
         qubits = list(qubits)
-        yield cirq.H.on_each(*qubits[:-self.memory_size])
-        yield PhaseKickback(self.num_qubits(), self.U, self.memory_size)(*qubits)
-        yield cirq.qft(*qubits[:-self.memory_size], without_reverse=True) ** -1
+        yield cirq.H.on_each(*qubits[:self.reg_size])
+        yield PhaseKickback(self.num_qubits(), self.U,
+                            self.reg_size, self.mem_size)(*qubits)
+        yield cirq.qft(*qubits[:self.reg_size], without_reverse=True) ** -1
 
 
 
-
-class HamiltonianSimulation(cirq.EigenGate, AnyQubitGate):
+class HamiltonianSimulation(cirq.Gate):
     """
-    A gate that represents e^iAt.
+    A gate that represents e^iAt. Based on Ahokas 2004.
 
-    This EigenGate + np.linalg.eigh() implementation is used here
-    purely for demonstrative purposes. If a large matrix is used,
-    the circuit should implement actual Hamiltonian simulation,
-    by using the linear operators framework in Cirq for example.
+    Qubits used:
+    memory (mem_size), anc_y (mem_size), anc_swap (1)
     """
 
-    def __init__(self, A, t, exponent=1.0):
-        num_qubits = int(np.log2(A.shape[0]))
+    def __init__(self, M, t, exponent=1.0):
+        super(HamiltonianSimulation, self)
 
-        AnyQubitGate.__init__(self, num_qubits)
-        cirq.EigenGate.__init__(self, exponent=exponent)
-        self.A = A
+        nb = int(np.log2(M.shape[0]))
+
+        self.M = M
+
+        self._num_qubits = nb * 2 + 1
+
+        self.num_qx = nb
 
         self.t = t
-        ws, vs = np.linalg.eigh(A)
-        self.eigen_components = []
-        for w, v in zip(ws, vs.T):
-            theta = w * t / math.pi
-            P = np.outer(v, np.conj(v))
-            self.eigen_components.append((theta, P))
+        self.exp = exponent
 
-    def _with_exponent(self, exponent):
-        return HamiltonianSimulation(self.A, self.t, exponent)
+        self.params = []
+        for i in range(M.shape[0]):
+            self.params.append(
+                np.where(M[:,i] != 0)[0][0]
+            )
 
-    def _eigen_components(self):
-        return self.eigen_components
+    def num_qubits(self):
+        return self._num_qubits
+
+    def __pow__(self, exp):
+        return HamiltonianSimulation(self.M, self.t, exponent=exp)
+
+    def _decompose_(self, qubits):
+        num_swaps = self.num_qx
+
+        qx = qubits[:self.num_qx]
+        qy = qubits[self.num_qx:2*self.num_qx]
+        anc = qubits[2*self.num_qx]
+
+        yield MGate(self.num_qx, self.params)(*qx, *qy)
+        yield (WSwapExponent(self.t, num_swaps)**self.exp) (*qx, *qy, anc)
+        yield MGate(self.num_qx, self.params)(*qx, *qy)
 
 
 class PhaseKickback(cirq.Gate):
@@ -90,22 +106,28 @@ class PhaseKickback(cirq.Gate):
     unitary is the unitary gate whose phases will be estimated.
     """
 
-    def __init__(self, num_qubits, unitary, memory_size):
+    def __init__(self, num_qubits, unitary, reg_size, mem_size, exp=1.0):
         super(PhaseKickback, self)
         self._num_qubits = num_qubits
         self.U = unitary
-        self.memory_size = memory_size
+        self.mem_size = mem_size
+        self.reg_size = reg_size
+        self.exp = exp
 
     def num_qubits(self):
         return self._num_qubits
 
+    def __pow__(self, exp):
+        return PhaseKickback(self._num_qubits, self.U,
+                             self.reg_size, self.mem_size, exp)
+
     def _decompose_(self, qubits):
         qubits = list(qubits)
-        memory = qubits[-self.memory_size:]
-        work_q = qubits[:-self.memory_size]
+        mem_qubits = qubits[self.reg_size:]
+        work_q = qubits[:self.reg_size]
 
         for i, qubit in enumerate(work_q):
-            yield cirq.ControlledGate(self.U ** (2 ** i))(qubit, *memory)
+            yield cirq.ControlledGate(self.U ** (self.exp * 2 ** i))(qubit, *mem_qubits)
 
 
 class EigenRotation(cirq.Gate):
@@ -357,9 +379,15 @@ def hhl_circuit(A, C, t, register_size, b, k_border,
         mem_select = [cirq.LineQubit(memory_size + register_size + 1 + i) for i in range(memory_size)]
         ancilla_select = cirq.LineQubit(2*memory_size + register_size + 1)
 
+    # ancilla used for Swap gate
+    anc_swap = cirq.LineQubit(100)
+
+    # y qubits for use in MGate and Swap
+    anc_y = [cirq.LineQubit(200+i) for i in range(len(memory))]
+
     c = cirq.Circuit()
     hs = HamiltonianSimulation(A, t)
-    pe = PhaseEstimation(register_size + memory_size, hs, memory_size)
+    pe = PhaseEstimation(register_size, memory_size, hs)
 
     c.append([
         InputPrepGates(b)(*memory)
@@ -372,9 +400,9 @@ def hhl_circuit(A, C, t, register_size, b, k_border,
 
     c.append(
         [
-            pe(*(register + memory)),
+            pe(*(register + memory + anc_y), anc_swap),
             EigenRotation(register_size + 1, C, t, k_border)(*(register + [ancilla])),
-            pe(*(register + memory)) ** -1,
+            pe(*(register + memory + anc_y), anc_swap) ** -1,
         ]
     )
 
@@ -507,7 +535,7 @@ def main():
     select = None
     getMagnitude = False
 
-    A, b = readInput(open('A_in.txt'), open('B_in.txt'))
+    #A, b = readInput(open('A_in.txt'), open('B_in.txt'))
 
 ##    A = np.array(
 ##        [
@@ -536,6 +564,16 @@ def main():
 ##        ]
 ##    )
 
+    A = np.array(
+        [
+            [0, 0, 0, 1],
+            [0, 0, 1, 0],
+            [0, 1, 0, 0],
+            [1, 0, 0, 0]
+        ]
+    )
+    b = np.array([[0, 0, 1, 0]]).T
+
     #b = np.array([[12], [-5], [1], [0]])
     #b = np.array([[12], [-5], [1], [0], [0], [0], [0], [0]])
     #b = np.array([[1], [0], [0], [0], [0], [0], [0], [0]])
@@ -547,8 +585,8 @@ def main():
 
     #A = A.astype('float')
     #b = b.astype('float')
-    #factors = [1] * len(A)
-    factors = precondition(A, b)
+    factors = [1] * len(A)
+    #factors = precondition(A, b)
 
 
     L, v = np.linalg.eigh(A)

@@ -17,13 +17,13 @@ def find_t_and_registerSize(A):
         delta = choose_delta(r_size)
 
         t = choose_t(lamda, r_size, err_threshold_for_t, delta)
-        if t < 8.8e30:
+        if t < 5.0e30:
             return t, r_size
 
         if r_size > 10:
             print("try register_size=", r_size);
 
-    if t > 8.0e30:
+    if t > 5.0e30:
         print("Solutions for the equations are unreliable with the current parameters:");
         sys.exit(1)
 
@@ -69,7 +69,18 @@ def choose_t(lamda, register_size, err_threshold, delta):
     #        as gap between lamda_max and 2*pi  (if all eigenvalues are positive)
     #        as gap between positive and negative eigenvalues (otherwise)
 
+    # local threshold - a hyper-parameter:
+    # max_quantization_err = 0.3,  e.g., eigenvalue of 16.3 or 15.7 becomes binary value of 16.
+    max_quantization_err = 0.3
+
+    # determine local criteria of round off error
+    # err_threshold:  quantization error relative to lamda range
+    # err_threshold2: quantization error relative to 1 grid in binary grides of lamda
+
     N = 2**register_size
+    err_threshold2 = err_threshold * N
+    if  err_threshold2 > max_quantization_err:
+        err_threshold2 = max_quantization_err
 
     # ------ determine t_min, t_max
 
@@ -95,6 +106,11 @@ def choose_t(lamda, register_size, err_threshold, delta):
 
     n_steps = 800
     delta_t = (t_max - t_min)/n_steps
+
+    if abs(delta_t) < (1.0e-20):
+        n_steps = 1
+    elif delta_t < 0:
+        n_steps = 0
 
     # err_min  is the        lowest error as t sweeps,  corresponding counter is i_best
     # err-min2 is the second lowest error as t sweeps,  corresponding counter is i_best2
