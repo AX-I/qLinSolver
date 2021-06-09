@@ -1,5 +1,6 @@
 """
 Methods for use in HHL
+Hamiltonian with integer values
 """
 
 import math
@@ -9,6 +10,7 @@ import cirq.ops.raw_types as raw_types
 import abc
 
 from W_swap import WGate, WSwap, MGate, WSwapExponent
+from W_swap2 import MGateValue, WSwapExponentValue, ZZFExp
 
 class AnyQubitGate(raw_types.Gate, metaclass=abc.ABCMeta):
     """A gate that must be applied to exactly 'any' qubits."""
@@ -31,11 +33,12 @@ class PhaseEstimation(cirq.Gate):
     estimated phase, in big-endian.
     """
 
-    def __init__(self, reg_size, mem_size, unitary):
-        self._num_qubits = reg_size + mem_size * 2 + 1
+    def __init__(self, reg_size, mem_size, unitary, r_prec):
+        self._num_qubits = reg_size + mem_size * 2 + 3 + 3*r_prec
         self.U = unitary
         self.mem_size = mem_size
         self.reg_size = reg_size
+        self.r = r_prec
 
     def num_qubits(self):
         return self._num_qubits
@@ -48,51 +51,63 @@ class PhaseEstimation(cirq.Gate):
         yield cirq.qft(*qubits[:self.reg_size], without_reverse=True) ** -1
 
 
+def getMGateParams(M):
+    """For each column, returns (row, value)"""
+    params = []
+    for i in range(M.shape[0]):
+        row = np.where(M[:,i] != 0)[0][0]
+        params.append((row, M[i,row]))
+    return params
+
 
 class HamiltonianSimulation(cirq.Gate):
     """
     A gate that represents e^iAt. Based on Ahokas 2004.
 
     Qubits used:
-    memory (mem_size), anc_y (mem_size), anc_swap (1)
+    memory (mem_size), anc_y (mem_size), anc_swap (1), anc_zzf(1), w_sign(1), w (3*r)
     """
 
-    def __init__(self, M, t, exponent=1.0):
+    def __init__(self, M, t, r, exponent=1.0):
         super(HamiltonianSimulation, self)
 
         nb = int(np.log2(M.shape[0]))
 
         self.M = M
 
-        self._num_qubits = nb * 2 + 1
+        self._num_qubits = nb * 2 + 3 + 3*r
 
         self.num_qx = nb
 
         self.t = t
+        self.r = r
         self.exp = exponent
 
-        self.params = []
-        for i in range(M.shape[0]):
-            self.params.append(
-                np.where(M[:,i] != 0)[0][0]
-            )
+        self.params = getMGateParams(M)
 
     def num_qubits(self):
         return self._num_qubits
 
     def __pow__(self, exp):
-        return HamiltonianSimulation(self.M, self.t, exponent=exp)
+        return HamiltonianSimulation(self.M, self.t, self.r, exponent=exp)
 
     def _decompose_(self, qubits):
         num_swaps = self.num_qx
 
         qx = qubits[:self.num_qx]
         qy = qubits[self.num_qx:2*self.num_qx]
-        anc = qubits[2*self.num_qx]
+        anc_swap = qubits[2*self.num_qx]
+        anc_zzf = qubits[2*self.num_qx + 1]
+        w_sign = qubits[2*self.num_qx + 2]
+        qw = qubits[2*self.num_qx + 3 : 2*self.num_qx + 3 + 3*self.r]
 
-        yield MGate(self.num_qx, self.params)(*qx, *qy)
-        yield (WSwapExponent(self.t, num_swaps)**self.exp) (*qx, *qy, anc)
-        yield MGate(self.num_qx, self.params)(*qx, *qy)
+        yield MGateValue(self.num_qx, self.params, self.r)(*qx, *qy, *qw, w_sign)
+
+        WSwapExp = WSwapExponentValue(self.t, num_swaps, self.r)**self.exp
+        yield WSwapExp(*qx, *qy, anc_swap, anc_zzf, w_sign, *qw)
+
+        yield MGateValue(self.num_qx, self.params, self.r)(*qx, *qy, *qw, w_sign)
+
 
 
 class PhaseKickback(cirq.Gate):

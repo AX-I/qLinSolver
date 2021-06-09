@@ -55,9 +55,19 @@ def hhl_circuit(A, C, t, register_size, b, k_border,
     # y qubits for use in MGate and Swap
     anc_y = [cirq.LineQubit(200+i) for i in range(len(memory))]
 
+
+    # w qubits for use in MGateValue
+    r_prec = 1
+    anc_zzf = cirq.LineQubit(300)
+    w_sign = cirq.LineQubit(301)
+    qw = [cirq.LineQubit(310+i) for i in range(3*r_prec)]
+
+
+
+
     c = cirq.Circuit()
-    hs = HamiltonianSimulation(A, t)
-    pe = PhaseEstimation(register_size, memory_size, hs)
+    hs = HamiltonianSimulation(A, t, r_prec)
+    pe = PhaseEstimation(register_size, memory_size, hs, r_prec)
 
     c.append([
         InputPrepGates(b)(*memory)
@@ -68,13 +78,11 @@ def hhl_circuit(A, C, t, register_size, b, k_border,
             InputPrepGates(select)(*mem_select)
         ])
 
-    c.append(
-        [
-            pe(*(register + memory + anc_y), anc_swap),
-            EigenRotation(register_size + 1, C, t, k_border)(*(register + [ancilla])),
-            pe(*(register + memory + anc_y), anc_swap) ** -1,
-        ]
-    )
+    c.append([
+        pe(*(register + memory + anc_y), anc_swap, anc_zzf, w_sign, *qw),
+        EigenRotation(register_size + 1, C, t, k_border)(*(register + [ancilla])),
+        pe(*(register + memory + anc_y), anc_swap, anc_zzf, w_sign, *qw) ** -1,
+    ])
 
     if select is not None:
         c.append([
@@ -199,12 +207,12 @@ def main():
     A = np.array(
         [
             [0, 0, 0, 1],
-            [0, 0, 1, 0],
-            [0, 1, 0, 0],
+            [0, 0, -3, 0],
+            [0, -3, 0, 0],
             [1, 0, 0, 0]
         ]
     )
-    b = np.array([[0, 0, 1, 0]]).T
+    b = np.array([[1, 1, 0, 0]]).T
 
     #b = np.array([[12], [-5], [1], [0]])
     #b = np.array([[12], [-5], [1], [0], [0], [0], [0], [0]])
