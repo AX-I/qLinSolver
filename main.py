@@ -6,6 +6,7 @@ Lloyd (HHL).
 import math
 import numpy as np
 import cirq
+import sys
 
 from HHL_Methods import precondition, readInput
 
@@ -134,8 +135,8 @@ def simulate(circuit, A, b, factors, reps):
         x = np.array(x)
         x = np.sqrt(x) / np.sum(x) / np.array(factors)
         x = x / np.linalg.norm(x)
-        for i in range(len(x)):
-            print(i, x[i])
+##        for i in range(len(x)):
+##            print(i, x[i])
 
         return x
 
@@ -165,88 +166,26 @@ def simulate(circuit, A, b, factors, reps):
         print('Not measuring magnitude')
 
 
-
-def main():
-    """
-    Simulates HHL with matrix input, and outputs Pauli observables of the
-    resulting qubit state |x>.
-    Expected observables are calculated from the expected solution |x>.
-    """
-    select = None
-    getMagnitude = False
-
-    #A, b = readInput(open('A_in.txt'), open('B_in.txt'))
-
-##    A = np.array(
-##        [
-##            [5, 0],
-##            [0, -1]
-##        ]
-##    )
-##    A = np.array(
-##        [
-##            [5, -2, 0, 0],
-##            [-2, 1, 0, 0],
-##            [0, 0, 5, -2],
-##            [0, 0, -2, 1]
-##        ]
-##    )
-##    A = np.array(
-##        [
-##            [5, -2, 0, 0, 0, 0, 0, 0],
-##            [-2, 1, 0, 0, 0, 0, 0, 0],
-##            [0, 0, 5, -2, 0, 0, 0, 0],
-##            [0, 0, -2, 1, 0, 0, 0, 0],
-##            [0, 0, 0, 0, 5, -2, 0, 0],
-##            [0, 0, 0, 0, -2, 1, 0, 0],
-##            [0, 0, 0, 0, 0, 0, 5, -2],
-##            [0, 0, 0, 0, 0, 0, -2, 1]
-##        ]
-##    )
-
-    A = np.array(
-        [
-            [0, 0, 0, 1],
-            [0, 0, -3, 0],
-            [0, -3, 0, 0],
-            [1, 0, 0, 0]
-        ]
-    )
-    b = np.array([[1, 1, 0, 0]]).T
-
-    #b = np.array([[12], [-5], [1], [0]])
-    #b = np.array([[12], [-5], [1], [0], [0], [0], [0], [0]])
-    #b = np.array([[1], [0], [0], [0], [0], [0], [0], [0]])
-
-    #select = np.array([[1], [0]])
-    #getMagnitude = True
-
-    # ==== ==== ==== ==== End of User Input ==== ==== ==== ====
-
-    #A = A.astype('float')
-    #b = b.astype('float')
-    factors = [1] * len(A)
-    #factors = precondition(A, b)
+def testCircuit(A, b, reps=10**5, precondition=False):
+    if precondition:
+        factors = precondition(A, b)
+    else:
+        factors = [1] * len(A)
 
 
     L, v = np.linalg.eigh(A)
-    print('Condition number', max(L) / min(L))
+    #print('Condition number', max(L) / min(L))
 
     from find_t_and_registerSize import find_t_and_registerSize
     t, register_size = find_t_and_registerSize(A)
-
-    print('t', t)
-    print('Register size', register_size)
-
-    if select is not None:
-        select = select / np.linalg.norm(select)
+    #print('t', t)
+    #print('Register size', register_size)
 
     # k_border is the overflow limit between positive and negative eigenvalues
     k_border = 1 + math.floor((2**register_size * max(L) * t / (2*3.1415)))
-    print('border', k_border)
+    #print('border', k_border)
 
-    # Set C to be the smallest eigenvalue that can be represented by the
-    # circuit.
+    # Set C to be the smallest eigenvalue that can be represented by the circuit.
     C = 2 * math.pi / (2 ** register_size * t)
 
     sol = np.linalg.inv(A) @ b
@@ -255,28 +194,68 @@ def main():
         sol[i] /= factors[i]
         sol[i] = math.sqrt((sol[i] * sol[i].conjugate()).real)
 
-    if getMagnitude:
-        print('Classical magnitude')
-        print(np.linalg.norm(sol))
     sol = sol / np.linalg.norm(sol)
 
-    print('Classical solution')
-    print(sol)
-    if select is not None:
-        print('Inner product')
-        print(round((select.T @ sol)[0][0], 8))
+    #print('Classical solution')
+    #print(sol)
 
     # Simulate circuit
-    r = 5 * 10**5
-    print('Repetitions:', r)
-    print("Results: ")
+    #print('Repetitions:', reps)
+    #print("Results: ")
     actual = simulate(hhl_circuit(A, C, t, register_size, b,
-                         k_border, select, getMagnitude),
-                      A, b, factors, reps=r)
+                         k_border, None, False),
+                      A, b, factors, reps=reps)
 
     sol = sol.flatten()
     actual = actual.flatten()
-    print('Relative error:', math.sqrt((sum((sol - actual) ** 2)).real))
+    err = math.sqrt((sum((sol - actual) ** 2)).real)
+    if err < 0.1:
+        print('Relative error:', err)
+    else:
+        sys.stderr.write('Relative error: {}\n'.format(err))
+    return err
+
+
+def main():
+    """
+    Simulates HHL with matrix input.
+    """
+
+    select = None
+    getMagnitude = False
+
+    #A, b = readInput(open('A_in.txt'), open('B_in.txt'))
+
+    A = np.array([
+            [5, 0],
+            [0, -1]
+    ])
+    b = np.array([[1, 1]]).T
+
+    testCircuit(A, b)
+
+
+    A = np.array([
+            [5, -2, 0, 0],
+            [-2, 1, 0, 0],
+            [0, 0, 5, -2],
+            [0, 0, -2, 1]
+    ])
+    b = np.array([[1, 0, 1, 1]]).T
+
+    testCircuit(A, b)
+
+
+    A = np.array([
+            [0, 0, 3, 0],
+            [0, 0, 0, 2],
+            [3, 0, 0, 0],
+            [0, 2, 0, 0]
+    ])
+    b = np.array([[1, 0, 1, 1]]).T
+
+    testCircuit(A, b)
+
 
 
 if __name__ == '__main__':

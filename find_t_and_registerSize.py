@@ -159,11 +159,11 @@ def choose_t(lamda, register_size, err_threshold, delta):
 
                  if (i > 200) and ((i_best - i_best2) > 100) and (err_min2 < 1.2 * err_threshold):
                      t_best2 = t_min + i_best2 * delta_t
-                     print("set t = %10.4e" % t_best2, "(i =", i_best2, "/", n_steps,")...")
+                     #print("set t = %10.4e" % t_best2, "(i =", i_best2, "/", n_steps,")...")
                      return t_best2
                  else:
                      t_best = t_min + i_best * delta_t
-                     print("set t = %10.4e" % t_best,  "(i =", i_best,   "/", n_steps,")....")
+                     #print("set t = %10.4e" % t_best,  "(i =", i_best,   "/", n_steps,")....")
                      return t_best
         t += delta_t
 
