@@ -1,6 +1,6 @@
 """
 Methods for use in HHL
-Hamiltonian with integer values
+Hamiltonian with integer (real or imaginary) values
 """
 
 import math
@@ -83,7 +83,12 @@ class HamiltonianSimulation(cirq.Gate):
         self.r = r
         self.exp = exponent
 
-        self.params = getMGateParams(M)
+        self.imaginary = (M.imag != 0).any()
+
+        if self.imaginary:
+            self.params = getMGateParams(M / complex(0, 1))
+        else:
+            self.params = getMGateParams(M)
 
     def num_qubits(self):
         return self._num_qubits
@@ -103,7 +108,8 @@ class HamiltonianSimulation(cirq.Gate):
 
         yield MGateValue(self.num_qx, self.params, self.r)(*qx, *qy, *qw, w_sign)
 
-        WSwapExp = WSwapExponentValue(self.t, num_swaps, self.r)**self.exp
+        WSwapExp = WSwapExponentValue(self.t, num_swaps, self.r,
+                                      imaginary=self.imaginary)**self.exp
         yield WSwapExp(*qx, *qy, anc_swap, anc_zzf, w_sign, *qw)
 
         yield MGateValue(self.num_qx, self.params, self.r)(*qx, *qy, *qw, w_sign)

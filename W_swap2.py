@@ -1,4 +1,5 @@
 # M gate with integer values, Z⊗Z⊗F matrix exp
+# WSwapExp with imaginary GTG-1
 
 import math
 import numpy as np
@@ -82,7 +83,7 @@ class MGateValue(cirq.Gate):
                     yield cx(*qx, qy[i])
 
 
-            bin_w = ('{:'+str(3*self.r)+'b}').format(abs(self.params[k][1]))
+            bin_w = ('{:'+str(3*self.r)+'b}').format(abs(int(self.params[k][1].real)))
             for i in range(len(bin_w)):
                 if bin_w[i] == '1':
                     cx = cirq.ControlledGate(cirq.X, num_controls=n)
@@ -97,19 +98,39 @@ class MGateValue(cirq.Gate):
                     yield cirq.X(qx[i])
 
 
+class GGate(cirq.Gate):
+    def __init__(self, exp=1):
+        super(GGate, self)
+        self._num_qubits = 1
+        self.exp = exp
+    def num_qubits(self):
+        return 1
+    def __pow__(self, p):
+        return GGate(exp=p)
+    def _unitary_(self):
+        u = -1/math.sqrt(2) * np.array([[complex(0, 1), 1],
+                                        [1, complex(0, 1)]])
+        if self.exp == 1:
+            return u
+        elif self.exp == -1:
+            return np.linalg.inv(u)
+
+
 class WSwapExponentValue(cirq.Gate):
-    def __init__(self, t, num_swaps, r, power=1.0):
+    def __init__(self, t, num_swaps, r, power=1.0, imaginary=False):
         """Qubits used:
         memory (num), anc_y (num), anc_swap (1), anc_zzf (1), w_sign (1), w (3*r)"""
         super(WSwapExponentValue, self)
         self.t = t
         self.r = r
+        self.imaginary = imaginary
         self.power = power
         self.num_swaps = num_swaps
         self._num_qubits = num_swaps * 2 + 3 + 3*r
 
     def __pow__(self, exp):
-        return WSwapExponentValue(self.t, self.num_swaps, self.r, power=exp)
+        return WSwapExponentValue(self.t, self.num_swaps, self.r,
+                                  power=exp, imaginary=self.imaginary)
 
     def num_qubits(self):
         return self._num_qubits
@@ -131,7 +152,14 @@ class WSwapExponentValue(cirq.Gate):
         anc_zzf = qubits[2*self.num_swaps + 1]
         w_sign = qubits[2*self.num_swaps + 2]
         qw = qubits[2*self.num_swaps+3 : 2*self.num_swaps+3 + 3*self.r]
+
+        if self.imaginary:
+            yield GGate()(w_sign)
+
         yield ZZFExp(self.r, self.power * self.t)(anc_swap, anc_zzf, w_sign, *qw)
+
+        if self.imaginary:
+            yield GGate()(w_sign) ** -1
 
 
         for i in range(self.num_swaps-1, -1, -1):

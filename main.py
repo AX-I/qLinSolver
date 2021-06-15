@@ -257,6 +257,18 @@ def main():
     testCircuit(A, b)
 
 
+    A = np.array([
+            [0, 0, 3, 0],
+            [0, 0, 0, 2],
+            [3, 0, 0, 0],
+            [0, 2, 0, 0]
+        ], 'complex')
+    A *= complex(0, 1)
+    b = np.array([[1, 0, 1, 1]], 'complex').T
+
+    testCircuit(A, b)
+
+
 
 if __name__ == '__main__':
     main()
