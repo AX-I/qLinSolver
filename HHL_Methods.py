@@ -1,6 +1,7 @@
 """
 Methods for use in HHL
 Hamiltonian with integer (real or imaginary) values
+Compound hamiltonian (Trotter formula)
 """
 
 import math
@@ -114,6 +115,44 @@ class HamiltonianSimulation(cirq.Gate):
 
         yield MGateValue(self.num_qx, self.params, self.r)(*qx, *qy, *qw, w_sign)
 
+
+class CompoundHamiltonian(cirq.Gate):
+    """Implements the Trotter formula
+    e^(i(A+B)) = lim{k->inf} (e^(iA/2k)e^(iB/k)e^(iA/2k))^k
+    """
+
+    def __init__(self, M1, M2, t, r, exponent=1.0, k_iter=8):
+        super(CompoundHamiltonian, self)
+
+        self.t = t
+        self.r = r
+        self.exp = exponent
+
+        self.M1 = M1
+        self.M2 = M2
+
+        self.k_iter = k_iter
+
+        nb = int(np.log2(M1.shape[0]))
+        self._num_qubits = nb * 2 + 3 + 3*r
+
+    def num_qubits(self):
+        return self._num_qubits
+
+    def __pow__(self, exp):
+        return CompoundHamiltonian(self.M1, self.M2, self.t, self.r,
+                                   exponent=exp, k_iter=self.k_iter)
+
+    def _decompose_(self, qubits):
+        for i in range(self.k_iter):
+            yield HamiltonianSimulation(self.M1, self.t / (2*self.k_iter),
+                                        self.r, self.exp)(*qubits)
+
+            yield HamiltonianSimulation(self.M2, self.t / self.k_iter,
+                                        self.r, self.exp)(*qubits)
+
+            yield HamiltonianSimulation(self.M1, self.t / (2*self.k_iter),
+                                        self.r, self.exp)(*qubits)
 
 
 class PhaseKickback(cirq.Gate):

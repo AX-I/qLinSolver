@@ -14,9 +14,11 @@ from HHL_Methods import PhaseEstimation, HamiltonianSimulation, PhaseKickback
 from HHL_Methods import EigenRotation, InputPrepGates
 from HHL_Methods import InnerProduct
 
+from HHL_Methods import CompoundHamiltonian
+
 
 def hhl_circuit(A, C, t, register_size, b, k_border,
-                select, getMagnitude):
+                select, getMagnitude, compound=None):
     """
     Constructs the HHL circuit.
 
@@ -67,7 +69,12 @@ def hhl_circuit(A, C, t, register_size, b, k_border,
 
 
     c = cirq.Circuit()
-    hs = HamiltonianSimulation(A, t, r_prec)
+
+    if compound is None:
+        hs = HamiltonianSimulation(A, t, r_prec)
+    else:
+        hs = CompoundHamiltonian(*compound, t, r_prec, k_iter=16)
+
     pe = PhaseEstimation(register_size, memory_size, hs, r_prec)
 
     c.append([
@@ -166,7 +173,8 @@ def simulate(circuit, A, b, factors, reps):
         print('Not measuring magnitude')
 
 
-def testCircuit(A, b, reps=10**5, precondition=False):
+def testCircuit(A, b, reps=10**5, precondition=False, compound=None):
+    """If compound is not None then A = sum(compound)"""
     if precondition:
         factors = precondition(A, b)
     else:
@@ -196,15 +204,22 @@ def testCircuit(A, b, reps=10**5, precondition=False):
 
     sol = sol / np.linalg.norm(sol)
 
-    #print('Classical solution')
-    #print(sol)
 
     # Simulate circuit
     #print('Repetitions:', reps)
     #print("Results: ")
     actual = simulate(hhl_circuit(A, C, t, register_size, b,
-                         k_border, None, False),
+                         k_border, select=None, getMagnitude=False,
+                         compound=compound),
                       A, b, factors, reps=reps)
+
+    space = len('Classical solution')
+    print('Classical solution   Actual')
+    fs = '{:<' + str(space) + '}   {}'
+    solstr = str(sol).split('\n')
+    actstr = str(np.expand_dims(actual, 0).T).split('\n')
+    for i in range(sol.shape[0]):
+        print(fs.format(solstr[i], actstr[i]))
 
     sol = sol.flatten()
     actual = actual.flatten()
@@ -213,6 +228,7 @@ def testCircuit(A, b, reps=10**5, precondition=False):
         print('Relative error:', err)
     else:
         sys.stderr.write('Relative error: {}\n'.format(err))
+    print()
     return err
 
 
@@ -260,15 +276,28 @@ def main():
     A = np.array([
             [0, 0, 3, 0],
             [0, 0, 0, 2],
-            [3, 0, 0, 0],
-            [0, 2, 0, 0]
-        ], 'complex')
-    A *= complex(0, 1)
+            [-3,0, 0, 0],
+            [0,-2, 0, 0]
+        ], 'complex') * complex(0, 1)
     b = np.array([[1, 0, 1, 1]], 'complex').T
 
     testCircuit(A, b)
 
 
+    A1 = np.array([
+            [0,1],
+            [-1,0]
+        ], 'complex') * complex(0,1)
+    A2 = np.array([
+            [1,0],
+            [0,2]
+        ], 'complex')
+
+    A = A1 + A2
+
+    b = np.array([[1,1]], 'complex').T
+
+    testCircuit(A, b, compound=(A1, A2))
 
 if __name__ == '__main__':
     main()
