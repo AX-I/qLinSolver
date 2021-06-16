@@ -56,7 +56,7 @@ def getMGateParams(M):
     params = []
     for i in range(M.shape[0]):
         row = np.where(M[:,i] != 0)[0][0]
-        params.append((row, M[i,row]))
+        params.append((row, M[row,i]))
     return params
 
 

@@ -33,13 +33,13 @@ class ZZFExp(cirq.Gate):
         yield cirq.ControlledGate(cirq.X)(w_sign, anc_zzf)
 
         for i in range(3*self.r):
-            crot = cirq.ControlledGate(cirq.ZPowGate(exponent= self.exp * (2**i) * self.t/math.pi))
+            crot = cirq.ControlledGate(cirq.ZPowGate(exponent= self.exp * (-(2**i)) * self.t/math.pi))
             yield crot(anc_zzf, qw[3*self.r - i - 1])
 
         yield cirq.X(anc_zzf)
 
         for i in range(3*self.r):
-            crot = cirq.ControlledGate(cirq.ZPowGate(exponent= self.exp * (-(2**i)) * self.t/math.pi))
+            crot = cirq.ControlledGate(cirq.ZPowGate(exponent= self.exp * (2**i) * self.t/math.pi))
             yield crot(anc_zzf, qw[3*self.r - i - 1])
 
         yield cirq.X(anc_zzf)
@@ -90,7 +90,8 @@ class MGateValue(cirq.Gate):
                     yield cx(*qx, qw[i])
 
             if self.params[k][1] < 0:
-                yield cirq.X(w_sign)
+                cx = cirq.ControlledGate(cirq.X, num_controls=n)
+                yield cx(*qx, w_sign)
 
 
             for i in range(len(bin_x)):
