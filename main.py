@@ -18,7 +18,8 @@ from HHL_Methods import CompoundHamiltonian
 
 
 def hhl_circuit(A, C, t, register_size, b, k_border,
-                select, getMagnitude, compound=None):
+                select, getMagnitude,
+                coloring=None, trotter_iter=16):
     """
     Constructs the HHL circuit.
 
@@ -60,7 +61,7 @@ def hhl_circuit(A, C, t, register_size, b, k_border,
 
 
     # w qubits for use in MGateValue
-    r_prec = 1
+    r_prec = int(np.log2(np.max(A)).real / 3) + 1
     anc_zzf = cirq.LineQubit(300)
     w_sign = cirq.LineQubit(301)
     qw = [cirq.LineQubit(310+i) for i in range(3*r_prec)]
@@ -70,10 +71,10 @@ def hhl_circuit(A, C, t, register_size, b, k_border,
 
     c = cirq.Circuit()
 
-    if compound is None:
-        hs = HamiltonianSimulation(A, t, r_prec)
+    if coloring is not None:
+        hs = CompoundHamiltonian(A, coloring, t, r_prec, k_iter=trotter_iter)
     else:
-        hs = CompoundHamiltonian(*compound, t, r_prec, k_iter=16)
+        hs = HamiltonianSimulation(A, t, r_prec)
 
     pe = PhaseEstimation(register_size, memory_size, hs, r_prec)
 
@@ -173,8 +174,9 @@ def simulate(circuit, A, b, factors, reps):
         print('Not measuring magnitude')
 
 
-def testCircuit(A, b, reps=10**5, precondition=False, compound=None):
-    """If compound is not None then A = sum(compound)"""
+def testCircuit(A, b, reps=10**5, precondition=False,
+                coloring=None, trotter_iter=16):
+    """Coloring starts from 1"""
     if precondition:
         factors = precondition(A, b)
     else:
@@ -210,7 +212,7 @@ def testCircuit(A, b, reps=10**5, precondition=False, compound=None):
     #print("Results: ")
     actual = simulate(hhl_circuit(A, C, t, register_size, b,
                          k_border, select=None, getMagnitude=False,
-                         compound=compound),
+                         coloring=coloring, trotter_iter=trotter_iter),
                       A, b, factors, reps=reps)
 
     space = len('Classical solution')
@@ -257,47 +259,46 @@ def main():
             [0, 0, 5, -2],
             [0, 0, -2, 1]
     ])
-    b = np.array([[1, 0, 1, 1]]).T
+    coloring = np.array([
+        [1,2,0,0],
+        [2,1,0,0],
+        [0,0,1,2],
+        [0,0,2,1]], 'int')
+    b = np.array([[1,0,1,1]]).T
 
-    testCircuit(A, b)
-
-
-    A = np.array([
-            [0, 0, 3, 0],
-            [0, 0, 0, 2],
-            [3, 0, 0, 0],
-            [0, 2, 0, 0]
-    ])
-    b = np.array([[1, 0, 1, 1]]).T
-
-    testCircuit(A, b)
+    testCircuit(A, b, coloring=coloring, trotter_iter=48)
 
 
     A = np.array([
-            [0, 0, 3, 0],
-            [0, 0, 0, 2],
-            [-3,0, 0, 0],
-            [0,-2, 0, 0]
-        ], 'complex') * complex(0, 1)
-    b = np.array([[1, 0, 1, 1]], 'complex').T
+            [1,2,0,0],
+            [2,1,0,0],
+            [0,0,2,0],
+            [0,0,0,2]
+        ])
+    coloring = np.array([
+            [1,2,0,0],
+            [2,1,0,0],
+            [0,0,2,0],
+            [0,0,0,2]
+            ], 'int')
+    b = np.array([[1, 1, 1, 1]], 'complex').T
 
-    testCircuit(A, b)
+    testCircuit(A, b, coloring=coloring)
 
 
-    A1 = np.array([
-            [0,1],
-            [-1,0]
-        ], 'complex') * complex(0,1)
-    A2 = np.array([
-            [1,0],
-            [0,2]
+    A = np.array([
+            [1, 1j],
+            [-1j,2]
         ], 'complex')
 
-    A = A1 + A2
+    coloring = np.array([
+        [1,2],
+        [2,1]
+        ], 'int')
 
     b = np.array([[1,1]], 'complex').T
 
-    testCircuit(A, b, compound=(A1, A2))
+    testCircuit(A, b, coloring=coloring)
 
 if __name__ == '__main__':
     main()

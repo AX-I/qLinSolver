@@ -56,8 +56,12 @@ def getMGateParams(M):
     """For each column, returns (row, value)"""
     params = []
     for i in range(M.shape[0]):
-        row = np.where(M[:,i] != 0)[0][0]
-        params.append((row, M[row,i]))
+        location = np.where(M[:,i] != 0)[0]
+        if location.shape[0] > 0:
+            row = location[0]
+            params.append((row, M[row,i]))
+        else:
+            params.append((i, 0))
     return params
 
 
@@ -121,38 +125,45 @@ class CompoundHamiltonian(cirq.Gate):
     e^(i(A+B)) = lim{k->inf} (e^(iA/2k)e^(iB/k)e^(iA/2k))^k
     """
 
-    def __init__(self, M1, M2, t, r, exponent=1.0, k_iter=8):
+    def __init__(self, M, C, t, r, exponent=1.0, k_iter=8):
+        """M: input matrix, C: color matrix (start from 1)"""
+
         super(CompoundHamiltonian, self)
 
         self.t = t
         self.r = r
         self.exp = exponent
 
-        self.M1 = M1
-        self.M2 = M2
+        self.M = M
+        self.C = C
+
+        self.Mi = np.zeros_like(M, 'complex')
 
         self.k_iter = k_iter
 
-        nb = int(np.log2(M1.shape[0]))
+        nb = int(np.log2(M.shape[0]))
         self._num_qubits = nb * 2 + 3 + 3*r
 
     def num_qubits(self):
         return self._num_qubits
 
     def __pow__(self, exp):
-        return CompoundHamiltonian(self.M1, self.M2, self.t, self.r,
+        return CompoundHamiltonian(self.M, self.C, self.t, self.r,
                                    exponent=exp, k_iter=self.k_iter)
 
     def _decompose_(self, qubits):
         for i in range(self.k_iter):
-            yield HamiltonianSimulation(self.M1, self.t / (2*self.k_iter),
-                                        self.r, self.exp)(*qubits)
+            for j in range(np.max(self.C)):
+                self.Mi[:] = self.M * (self.C == (j+1))
 
-            yield HamiltonianSimulation(self.M2, self.t / self.k_iter,
-                                        self.r, self.exp)(*qubits)
+                yield HamiltonianSimulation(self.Mi, self.t / (2*self.k_iter),
+                                            self.r, self.exp)(*qubits)
 
-            yield HamiltonianSimulation(self.M1, self.t / (2*self.k_iter),
-                                        self.r, self.exp)(*qubits)
+            for j in range(np.max(self.C)-1, -1, -1):
+                self.Mi[:] = self.M * (self.C == (j+1))
+
+                yield HamiltonianSimulation(self.Mi, self.t / (2*self.k_iter),
+                                            self.r, self.exp)(*qubits)
 
 
 class PhaseKickback(cirq.Gate):
