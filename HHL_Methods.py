@@ -367,29 +367,18 @@ def rotPhase(b_den, b_num, qubitsA, qubitB, control=True):
     NC = len(qubitsA)
 
     if type(b_den) == np.ndarray and len(b_den) > 1:
-        den = sum(phase(z) for z in b_den)
-        num = sum(phase(z) for z in b_num)
+        den = sum(phase(z) for z in b_den) / len(b_den)
+        num = sum(phase(z) for z in b_num) / len(b_num)
     else:
         den = phase(b_den)
         num = phase(b_num)
 
-    if den == 0:
-        if num == 0:
-            return cirq.rz(0)(qubitB)
-        sign_num = 1 if num > 0 else -1
-
-        if control:
-            crot = cirq.ControlledGate(cirq.rz(sign_num * 3.1416), num_controls=NC)
-            return crot(*qubitsA, qubitB)
-        else:
-            return cirq.rz(sign_num * 3.1416)(qubitB)
+    theta = (num - den) / 2
+    if control:
+        crot = cirq.ControlledGate(cirq.rz(2 * theta), num_controls=NC)
+        return crot(*qubitsA, qubitB)
     else:
-        theta = (num - den) / 2
-        if control:
-            crot = cirq.ControlledGate(cirq.rz(2 * theta), num_controls=NC)
-            return crot(*qubitsA, qubitB)
-        else:
-            return cirq.rz(2 * theta)(qubitB)
+        return cirq.rz(2 * theta)(qubitB)
 
 
 class InnerProduct(cirq.Gate):
